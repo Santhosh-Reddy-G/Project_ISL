@@ -1,0 +1,26 @@
+{
+  "num_poses": 11,
+  "joint_names": [
+    "right_hip",
+    "right_knee",
+    "right_ankle",
+    "left_hip",
+    "left_knee",
+    "left_ankle",
+    "right_shoulder",
+    "left_shoulder"
+  ],
+  "pose_names": [
+    "test1",
+    "test2",
+    "test3",
+    "test4",
+    "test5_person1",
+    "test5_person2",
+    "test6_person1",
+    "test6_person2",
+    "test6_person3",
+    "test_image_person1",
+    "test_image_person2"
+  ]
+}

@@ -1,0 +1,88 @@
+# Humanoid Locomotion Configuration
+
+# Perception Module
+perception:
+  # MediaPipe Pose Detection
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.5
+  model_complexity: 2  # 0, 1, or 2 (higher = more accurate but slower)
+  
+  # Person Selection (when multiple people detected)
+  selection_method: "largest_bbox"  # Options: largest_bbox, center_closest
+  
+  # Joint angle conversion
+  joint_mapping:
+    # Maps MediaPipe landmarks to humanoid joint names
+    hip: [23, 24]      # Left hip, Right hip
+    knee: [25, 26]     # Left knee, Right knee
+    ankle: [27, 28]    # Left ankle, Right ankle
+    shoulder: [11, 12] # Left shoulder, Right shoulder
+    elbow: [13, 14]    # Left elbow, Right elbow
+
+# Simulation Module
+simulation:
+  physics_engine: "pybullet"
+  time_step: 0.01  # 100 Hz
+  gravity: -9.81
+  
+  # Humanoid properties
+  humanoid:
+    urdf_path: "humanoid_locomotion/simulation/assets/humanoid.urdf"
+    initial_height: 1.0
+    fall_height_threshold: 0.3
+  
+  # Observation space
+  observation:
+    include_joint_positions: true
+    include_joint_velocities: true
+    include_torso_orientation: true
+    include_torso_velocity: true
+
+# Control Module (DQN)
+control:
+  # Network architecture
+  network:
+    hidden_layers: [256, 256]
+    activation: "relu"
+  
+  # Action space
+  action:
+    num_joints: 8
+    torque_bins: [-1.0, -0.5, 0.0, 0.5, 1.0]
+  
+  # DQN hyperparameters
+  dqn:
+    learning_rate: 0.0001
+    gamma: 0.99  # Discount factor
+    epsilon_start: 1.0
+    epsilon_end: 0.01
+    epsilon_decay: 0.995
+    batch_size: 64
+    memory_size: 100000
+    target_update_frequency: 1000
+  
+  # Reward function weights
+  reward:
+    velocity_weight: 1.0
+    alive_weight: 0.1
+    energy_weight: 0.001
+    fall_penalty: -100.0
+
+# Training Module
+training:
+  num_episodes: 10000
+  max_steps_per_episode: 1000
+  pose_library_size: 100  # Number of diverse initial poses
+  save_frequency: 100  # Save model every N episodes
+  log_frequency: 10   # Log metrics every N episodes
+  
+  # Paths
+  model_save_path: "models/"
+  log_dir: "runs/"
+  pose_library_path: "data/pose_library.npy"
+
+# Visualization
+visualization:
+  render: false  # Set true for GUI rendering
+  save_videos: false
+  video_save_path: "videos/"
