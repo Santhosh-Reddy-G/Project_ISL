@@ -1,0 +1,81 @@
+# DQN Configuration for Humanoid Walking
+# Hyperparameters for training the agent
+
+# Environment settings
+environment:
+  name: "HumanoidWalk"
+  render_mode: null  # null for headless, "human" for GUI
+  max_steps: 1000    # Max steps per episode
+  num_torque_bins: 5 # Discrete action bins per joint
+
+# Agent settings
+agent:
+  state_dim: 29      # Observation space dimension
+  num_joints: 8      # Number of controllable joints
+  num_bins: 5        # Discrete torque bins per joint
+  
+  # Network architecture
+  hidden_dims: [256, 256, 128]  # Hidden layer sizes
+  
+  # Learning parameters
+  learning_rate: 0.0001   # Adam learning rate
+  gamma: 0.99             # Discount factor
+  
+  # Exploration
+  epsilon_start: 1.0      # Initial exploration rate
+  epsilon_end: 0.01       # Final exploration rate
+  epsilon_decay: 0.995    # Decay rate per episode
+  
+  # Experience replay
+  buffer_capacity: 100000 # Replay buffer size
+  batch_size: 128         # Mini-batch size for training
+  
+  # Target network
+  target_update_freq: 1000  # Steps between target network updates
+  
+  # Device
+  device: "auto"  # "cuda", "cpu", or "auto" (auto-detect)
+
+# Training settings
+training:
+  num_episodes: 5000      # Total training episodes
+  max_steps_per_episode: 1000
+  
+  # Pose library
+  use_pose_library: true
+  pose_library_path: "data/pose_library"
+  random_pose_each_episode: true
+  
+  # Checkpoints
+  save_freq: 100          # Save checkpoint every N episodes
+  checkpoint_dir: "models/checkpoints"
+  
+  # Evaluation
+  eval_freq: 50           # Evaluate every N episodes
+  eval_episodes: 10       # Number of episodes for evaluation
+  
+  # Logging
+  log_freq: 10            # Log stats every N episodes
+  tensorboard_dir: "runs"
+  
+  # Early stopping
+  early_stopping: true
+  patience: 200           # Stop if no improvement for N episodes
+  min_reward_threshold: 50.0  # Minimum reward to consider success
+
+# Reward function weights (can be tuned)
+reward:
+  w_vel: 1.0       # Forward velocity weight
+  w_live: 0.1      # Alive bonus weight
+  w_energy: 0.001  # Energy penalty weight
+  fall_penalty: -10.0  # Penalty for falling
+
+# Advanced options
+advanced:
+  gradient_clip: 10.0     # Max gradient norm
+  double_dqn: true        # Use Double DQN
+  prioritized_replay: false  # Use prioritized experience replay (not implemented yet)
+  dueling_network: false     # Use dueling architecture (not implemented yet)
+  
+# Reproducibility
+seed: 42  # Random seed for reproducibility
