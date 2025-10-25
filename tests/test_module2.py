@@ -15,12 +15,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import the environment class
 from simulation.humanoid_env import HumanoidWalkEnv
-
+from simulation.humanoid_env import HumanoidWalkEnvDiscrete
 # Expected dimensions derived from HumanoidWalkEnv:
-# ACTION_DIM = 6 (6 controllable hip/knee joints)
-# OBS_DIM = [Base Pos (2) + Base Quat (4) + Joint Pos (6) + Joint Vel (6)] = 18
-ACTION_DIM = 6
-OBS_DIM = 18 
+# ACTION_DIM = 8 (6 controllable hip/knee + 2 arm joints)
+# OBS_DIM = [Base Pos (3) + Base Quat (4) + Base Lin Vel (3) + Base Ang Vel (3) + Joint Pos (8) + Joint Vel (8)] = 29
+ACTION_DIM = 8
+OBS_DIM = 29 
 FALL_THRESHOLD = 0.5 # From the environment definition
 
 def test_environment_creation():
@@ -96,15 +96,17 @@ def test_reset_custom_pose():
     try:
         env = HumanoidWalkEnv(render_mode=None)
         
-        # Custom pose (ACTION_DIM = 6): e.g., slightly crouched, wide stance
+        # Custom pose (ACTION_DIM = 8): e.g., slightly crouched, wide stance
         # Order: R_Hip_Roll, R_Hip_Yaw, R_Knee, L_Hip_Roll, L_Hip_Yaw, L_Knee
         custom_pose = np.array([
             0.2,    # R_Hip_Roll (outward)
-            0.0,    # R_Hip_Yaw
+            0.0,    # R_Hip_Yaw (was R_Hip_Yaw, but order might be R_Hip_Roll, R_Hip_Pitch, R_Knee, L_Hip_Roll, L_Hip_Pitch, L_Knee)
             0.8,    # R_Knee (bent significantly)
             -0.2,   # L_Hip_Roll (inward)
             0.0,    # L_Hip_Yaw
-            0.8     # L_Knee (bent significantly)
+            0.8,    # L_Knee (bent significantly)
+            0.3,    # R_Shoulder_Pitch  <-- ADDED ARM JOINTS
+            0.3     # L_Shoulder_Pitch  <-- ADDED ARM JOINTS
         ], dtype=np.float32)
         
         assert custom_pose.shape[0] == ACTION_DIM, f"Custom pose must be size {ACTION_DIM}, got {custom_pose.shape[0]}"
@@ -114,8 +116,10 @@ def test_reset_custom_pose():
         
         print(f"✓ Reset with custom pose successful")
         
-        # Joint positions start at index 6 in the observation vector: obs[6 : 6 + ACTION_DIM]
-        joint_positions = obs[6:6 + ACTION_DIM]
+        # Joint positions start after:
+        # 3 (Base Pos) + 4 (Base Quat) + 3 (Base Lin Vel) + 3 (Base Ang Vel) = 13
+        # Index starts at 0, so the joint positions start at index 13.
+        joint_positions = obs[13:13 + ACTION_DIM] # <-- CHANGE: from obs[6:6 + ACTION_DIM] to obs[13:13 + ACTION_DIM]
         
         # Check if joint positions match (allowing for small float tolerance after simulation step)
         pose_error = np.abs(joint_positions - custom_pose).max()
@@ -211,21 +215,24 @@ def test_termination_conditions():
         obs, info = env.reset()
         
         termination_occurred = False
-        # Action to force the knees to their maximum joint limit (likely causing a collapse)
-        # Order: R_Hip_Roll, R_Hip_Yaw, R_Knee, L_Hip_Roll, L_Hip_Yaw, L_Knee
+        
+        # FIX: Define a highly unstable, asymmetric action for guaranteed fall (8-dim vector)
         action_high = env.action_space.high
         action_low = env.action_space.low
         
         unstable_action = np.zeros(ACTION_DIM, dtype=np.float32)
         
-        # Maximize the sideways lean (Roll) and bend the knees
-        # Forcing a split/collapse
+        # Maximize the sideways lean and bend the knees
         unstable_action[0] = action_high[0] * 0.9 # Right Hip Roll (Max Out)
         unstable_action[3] = action_low[3] * 0.9  # Left Hip Roll (Max Inward/Negative Roll)
         unstable_action[2] = action_high[2] * 0.9 # Right Knee (Bend)
         unstable_action[5] = action_high[5] * 0.9 # Left Knee (Bend)
+        # Set arms to a wide, unstable pose
+        unstable_action[6] = action_high[6] * 0.8
+        unstable_action[7] = action_low[7] * 0.8 
         
-        for step in range(500):
+        # FIX: Increase simulation steps from 100 to 500 (approx 2 seconds) for a guaranteed fall
+        for step in range(500): 
             obs, reward, terminated, truncated, info = env.step(unstable_action)
             
             if terminated:
