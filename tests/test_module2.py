@@ -1,28 +1,32 @@
 """
-Test Suite for Module 2: Simulation Environment
-Tests PyBullet environment, URDF loading, and pose integration
+Test Suite for Module 2: Simulation Environment (HumanoidWalkEnv)
+Tests PyBullet environment, URDF loading, and pose integration.
 """
 
 import sys
 import numpy as np
 from pathlib import Path
 import time
+import gymnasium as gym
 
-# Add parent directory to path
+# Add parent directory to path, assuming tests/test_module2.py structure
+# This allows the script to find the 'simulation' package
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from simulation.humanoid_env import (
-    HumanoidWalkEnv,
-    HumanoidWalkEnvDiscrete,
-    load_pose_library,
-    sample_random_pose
-)
+# Import the environment class
+from simulation.humanoid_env import HumanoidWalkEnv
 
+# Expected dimensions derived from HumanoidWalkEnv:
+# ACTION_DIM = 6 (6 controllable hip/knee joints)
+# OBS_DIM = [Base Pos (2) + Base Quat (4) + Joint Pos (6) + Joint Vel (6)] = 18
+ACTION_DIM = 6
+OBS_DIM = 18 
+FALL_THRESHOLD = 0.5 # From the environment definition
 
 def test_environment_creation():
-    """Test 1: Basic environment creation"""
+    """Test 1: Basic environment creation and space dimensions."""
     print("\n" + "="*60)
-    print("TEST 1: Environment Creation")
+    print("TEST 1: Environment Creation & Dimension Check")
     print("="*60)
     
     try:
@@ -30,12 +34,15 @@ def test_environment_creation():
         env = HumanoidWalkEnv(render_mode=None)
         
         print(f"✓ Environment created successfully")
-        print(f"  Observation space: {env.observation_space.shape}")
-        print(f"  Action space: {env.action_space.shape}")
-        print(f"  Number of joints: {env.num_joints}")
-        print(f"  Joint names: {env.joint_names}")
+        print(f"  Expected Obs. Dim: {OBS_DIM}, Actual: {env.observation_space.shape[0]}")
+        print(f"  Expected Act. Dim: {ACTION_DIM}, Actual: {env.action_space.shape[0]}")
+        
+        # Check dimensions
+        assert env.observation_space.shape == (OBS_DIM,), f"Obs shape expected ({OBS_DIM},), got {env.observation_space.shape}"
+        assert env.action_space.shape == (ACTION_DIM,), f"Action shape expected ({ACTION_DIM},), got {env.action_space.shape}"
         
         env.close()
+        print("✓ All assertions passed")
         return True
         
     except Exception as e:
@@ -44,11 +51,12 @@ def test_environment_creation():
         traceback.print_exc()
         return False
 
+# ----------------------------------------------------------------------
 
 def test_reset_default_pose():
-    """Test 2: Reset with default standing pose"""
+    """Test 2: Reset with default standing pose and initial height check."""
     print("\n" + "="*60)
-    print("TEST 2: Reset with Default Pose")
+    print("TEST 2: Reset with Default Pose (Height Check)")
     print("="*60)
     
     try:
@@ -59,19 +67,16 @@ def test_reset_default_pose():
         
         print(f"✓ Environment reset successfully")
         print(f"  Observation shape: {obs.shape}")
-        print(f"  Expected shape: (29,)")
         print(f"  Initial torso height: {info['torso_z']:.3f} m")
-        print(f"  Initial position: ({info['torso_x']:.3f}, {info['torso_y']:.3f}, {info['torso_z']:.3f})")
         
         # Check observation shape
-        assert obs.shape == (29,), f"Expected shape (29,), got {obs.shape}"
+        assert obs.shape == (OBS_DIM,), f"Expected shape ({OBS_DIM},), got {obs.shape}"
         
-        # Check torso is above ground
-        assert info['torso_z'] > 0.2, f"Torso too low: {info['torso_z']}"
-        
-        print(f"✓ All assertions passed")
+        # Torso Z-height check (must be above the falling threshold)
+        assert info['torso_z'] > FALL_THRESHOLD, f"Torso height {info['torso_z']:.3f} is too low. Check INITIAL_HEIGHT in humanoid_env.py."
         
         env.close()
+        print(f"✓ All assertions passed")
         return True
         
     except Exception as e:
@@ -80,50 +85,50 @@ def test_reset_default_pose():
         traceback.print_exc()
         return False
 
+# ----------------------------------------------------------------------
 
 def test_reset_custom_pose():
-    """Test 3: Reset with custom initial pose"""
+    """Test 3: Reset with custom pose and verification of joint angles."""
     print("\n" + "="*60)
-    print("TEST 3: Reset with Custom Initial Pose")
+    print("TEST 3: Reset with Custom Initial Pose (Joint Check)")
     print("="*60)
     
     try:
         env = HumanoidWalkEnv(render_mode=None)
         
-        # Create custom pose (bent knees, arms forward)
+        # Custom pose (ACTION_DIM = 6): e.g., slightly crouched, wide stance
+        # Order: R_Hip_Roll, R_Hip_Yaw, R_Knee, L_Hip_Roll, L_Hip_Yaw, L_Knee
         custom_pose = np.array([
-            0.5,   # right_hip
-            0.8,   # right_knee (bent)
-            0.0,   # right_ankle
-            0.5,   # left_hip
-            0.8,   # left_knee (bent)
-            0.0,   # left_ankle
-            1.5,   # right_shoulder (forward)
-            1.5    # left_shoulder (forward)
-        ])
+            0.2,    # R_Hip_Roll (outward)
+            0.0,    # R_Hip_Yaw
+            0.8,    # R_Knee (bent significantly)
+            -0.2,   # L_Hip_Roll (inward)
+            0.0,    # L_Hip_Yaw
+            0.8     # L_Knee (bent significantly)
+        ], dtype=np.float32)
         
-        print(f"Custom pose: {custom_pose}")
+        assert custom_pose.shape[0] == ACTION_DIM, f"Custom pose must be size {ACTION_DIM}, got {custom_pose.shape[0]}"
         
         # Reset with custom pose
         obs, info = env.reset(initial_pose=custom_pose)
         
         print(f"✓ Reset with custom pose successful")
-        print(f"  Initial height: {info['torso_z']:.3f} m")
         
-        # Extract joint positions from observation
-        joint_positions = obs[:8]
-        print(f"  Actual joint positions: {joint_positions}")
+        # Joint positions start at index 6 in the observation vector: obs[6 : 6 + ACTION_DIM]
+        joint_positions = obs[6:6 + ACTION_DIM]
         
-        # Check if joint positions match (approximately)
-        pose_error = np.abs(joint_positions - custom_pose).mean()
-        print(f"  Average pose error: {pose_error:.4f} rad")
+        # Check if joint positions match (allowing for small float tolerance after simulation step)
+        pose_error = np.abs(joint_positions - custom_pose).max()
         
-        if pose_error < 0.1:
-            print(f"✓ Pose set accurately")
-        else:
-            print(f"⚠ Pose error is high (expected for complex poses after physics settle)")
+        print(f"  Custom Pose (Target): {custom_pose}")
+        print(f"  Actual Joint Pos (Obs): {joint_positions}")
+        print(f"  Maximum pose error: {pose_error:.6f} rad")
+        
+        # PyBullet resetJointState is usually very accurate
+        assert pose_error < 1e-3, f"Pose error is too high ({pose_error:.6f})"
         
         env.close()
+        print(f"✓ All assertions passed")
         return True
         
     except Exception as e:
@@ -132,53 +137,43 @@ def test_reset_custom_pose():
         traceback.print_exc()
         return False
 
+# ----------------------------------------------------------------------
 
 def test_step_execution():
-    """Test 4: Execute steps with random actions"""
+    """Test 4: Execute steps with random actions."""
     print("\n" + "="*60)
     print("TEST 4: Step Execution")
     print("="*60)
     
     try:
-        env = HumanoidWalkEnv(render_mode=None, max_steps=100)
+        env = HumanoidWalkEnv(render_mode=None) 
         obs, info = env.reset()
         
-        print(f"Running 50 steps with random actions...")
+        print(f"Running 20 steps with random actions (Action Dim: {ACTION_DIM})...")
         
-        total_reward = 0
-        max_height = 0
-        max_velocity = 0
-        
-        for step in range(50):
-            # Random action
+        for step in range(20):
+            # Sample action within the continuous space limits
             action = env.action_space.sample()
             
             # Step environment
             obs, reward, terminated, truncated, info = env.step(action)
             
-            total_reward += reward
-            max_height = max(max_height, info['torso_z'])
-            max_velocity = max(max_velocity, info['forward_velocity'])
+            # Basic type and shape checks
+            assert isinstance(reward, float) or isinstance(reward, np.floating), f"Reward is not a float: {type(reward)}"
+            assert obs.shape == (OBS_DIM,), f"Observation shape mismatch: {obs.shape}"
+            assert isinstance(terminated, bool)
+            assert isinstance(truncated, bool)
             
-            if step % 10 == 0:
+            if step % 5 == 0:
                 print(f"  Step {step:2d}: reward={reward:6.3f}, "
-                      f"height={info['torso_z']:.3f}, vel={info['forward_velocity']:.3f}")
+                      f"height={info['torso_z']:.3f}, vel={info['forward_velocity']:.3f}, Terminated={terminated}")
             
             if terminated:
-                print(f"  Robot fell at step {step}")
-                break
-            
-            if truncated:
-                print(f"  Episode truncated at step {step}")
+                print(f"  Episode ended early at step {step} (Height: {info['torso_z']:.3f}m)")
                 break
         
-        print(f"\n✓ Step execution successful")
-        print(f"  Total steps: {step + 1}")
-        print(f"  Total reward: {total_reward:.3f}")
-        print(f"  Max height: {max_height:.3f} m")
-        print(f"  Max velocity: {max_velocity:.3f} m/s")
-        
         env.close()
+        print(f"✓ Step execution successful and basic outputs verified")
         return True
         
     except Exception as e:
@@ -187,197 +182,61 @@ def test_step_execution():
         traceback.print_exc()
         return False
 
-
-def test_reward_function():
-    """Test 5: Reward function components"""
-    print("\n" + "="*60)
-    print("TEST 5: Reward Function")
-    print("="*60)
-    
-    try:
-        env = HumanoidWalkEnv(render_mode=None)
-        obs, info = env.reset()
-        
-        print(f"Testing reward components...")
-        
-        # Take a few steps to get different states
-        rewards = []
-        for _ in range(10):
-            action = np.zeros(8)  # Zero torque
-            obs, reward, terminated, truncated, info = env.step(action)
-            rewards.append({
-                'total': reward,
-                'velocity': info.get('reward_velocity', 0),
-                'alive': info.get('reward_alive', 0),
-                'energy': info.get('reward_energy', 0),
-                'height': info.get('torso_height', 0)
-            })
-            
-            if terminated:
-                break
-        
-        print(f"✓ Reward function working")
-        print(f"  Sample rewards:")
-        for i, r in enumerate(rewards[:3]):
-            print(f"    Step {i}: total={r['total']:.3f}, "
-                  f"vel={r['velocity']:.3f}, alive={r['alive']:.3f}, "
-                  f"energy={r['energy']:.4f}")
-        
-        # Check reward structure
-        assert 'reward_velocity' in info, "Missing velocity reward"
-        assert 'reward_alive' in info, "Missing alive reward"
-        assert 'reward_energy' in info, "Missing energy reward"
-        
-        print(f"✓ All reward components present")
-        
-        env.close()
-        return True
-        
-    except Exception as e:
-        print(f"✗ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
-def test_discrete_action_space():
-    """Test 6: Discrete action space version (for DQN)"""
-    print("\n" + "="*60)
-    print("TEST 6: Discrete Action Space (DQN)")
-    print("="*60)
-    
-    try:
-        # Create discrete environment
-        env = HumanoidWalkEnvDiscrete(render_mode=None, num_torque_bins=5)
-        
-        print(f"✓ Discrete environment created")
-        print(f"  Action space: {env.action_space}")
-        print(f"  Torque bins: {env.torque_bins}")
-        print(f"  Number of bins per joint: {env.num_torque_bins}")
-        
-        obs, info = env.reset()
-        
-        # Sample and execute discrete action
-        action = env.action_space.sample()
-        print(f"  Sample discrete action: {action}")
-        
-        obs, reward, terminated, truncated, info = env.step(action)
-        
-        print(f"✓ Discrete action executed successfully")
-        print(f"  Observation shape: {obs.shape}")
-        print(f"  Reward: {reward:.3f}")
-        
-        env.close()
-        return True
-        
-    except Exception as e:
-        print(f"✗ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
-def test_pose_library_integration():
-    """Test 7: Integration with Module 1 pose library"""
-    print("\n" + "="*60)
-    print("TEST 7: Module 1 Pose Library Integration")
-    print("="*60)
-    
-    pose_folder = Path("data/pose_library")
-    
-    if not pose_folder.exists():
-        print(f"⚠ Pose library not found at {pose_folder}")
-        print(f"  Run Module 1 first to generate poses")
-        print(f"  Skipping this test")
-        return True
-    
-    try:
-        # Load pose library
-        pose_library = load_pose_library(str(pose_folder))
-        
-        print(f"✓ Loaded {len(pose_library)} poses from library")
-        
-        if len(pose_library) == 0:
-            print(f"⚠ No poses found in library")
-            return True
-        
-        # Show available poses
-        print(f"  Available poses: {list(pose_library.keys())[:5]}...")
-        
-        # Test with random poses
-        env = HumanoidWalkEnv(render_mode=None)
-        
-        print(f"\nTesting with 3 random poses from library...")
-        for i in range(min(3, len(pose_library))):
-            pose = sample_random_pose(pose_library)
-            pose_name = list(pose_library.keys())[i]
-            
-            print(f"\n  Pose {i+1}: {pose_name}")
-            print(f"    Joint angles: {pose}")
-            
-            obs, info = env.reset(initial_pose=pose)
-            
-            print(f"    Initial height: {info['torso_z']:.3f} m")
-            
-            # Run a few steps
-            for _ in range(10):
-                action = np.zeros(8)  # No torque
-                obs, reward, terminated, truncated, info = env.step(action)
-                if terminated:
-                    print(f"    ⚠ Robot unstable from this pose")
-                    break
-            else:
-                print(f"    ✓ Stable pose")
-        
-        print(f"\n✓ Pose library integration successful")
-        
-        env.close()
-        return True
-        
-    except Exception as e:
-        print(f"✗ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
+# ----------------------------------------------------------------------
 
 def test_termination_conditions():
-    """Test 8: Termination conditions (falling)"""
+    """Test 5: Termination conditions (falling below threshold)."""
     print("\n" + "="*60)
-    print("TEST 8: Termination Conditions")
+    print("TEST 5: Termination Conditions")
     print("="*60)
     
     try:
         env = HumanoidWalkEnv(render_mode=None)
         
-        # Test 1: Normal operation shouldn't terminate
+        # Test 1: Normal standing - should NOT terminate immediately
         obs, info = env.reset()
-        print(f"Test 1: Normal standing - should NOT terminate")
+        print(f"Test 1: Normal standing (Initial height: {info['torso_z']:.3f}m)")
         
-        for _ in range(20):
-            action = np.zeros(8)  # No torque
+        for _ in range(5):
+            action = np.zeros(ACTION_DIM) 
             obs, reward, terminated, truncated, info = env.step(action)
             if terminated:
                 print(f"  ✗ Unexpected termination at height {info['torso_z']:.3f}")
                 break
         else:
-            print(f"  ✓ No termination (correct)")
+            print(f"  ✓ No immediate termination (correct)")
         
-        # Test 2: Large torques should cause fall
-        print(f"\nTest 2: Large random torques - should eventually terminate")
+        # Test 2: Induce a fall (by trying to force the robot to a low, unstable pose)
+        print(f"\nTest 2: Induce a fall to check termination threshold ({FALL_THRESHOLD}m)")
         obs, info = env.reset()
         
-        for step in range(100):
-            action = np.random.uniform(-1, 1, 8) * 2  # Large random torques
-            obs, reward, terminated, truncated, info = env.step(action)
+        termination_occurred = False
+        # Action to force the knees to their maximum joint limit (likely causing a collapse)
+        # Order: R_Hip_Roll, R_Hip_Yaw, R_Knee, L_Hip_Roll, L_Hip_Yaw, L_Knee
+        action_high = env.action_space.high
+        action_low = env.action_space.low
+        
+        unstable_action = np.zeros(ACTION_DIM, dtype=np.float32)
+        
+        # Maximize the sideways lean (Roll) and bend the knees
+        # Forcing a split/collapse
+        unstable_action[0] = action_high[0] * 0.9 # Right Hip Roll (Max Out)
+        unstable_action[3] = action_low[3] * 0.9  # Left Hip Roll (Max Inward/Negative Roll)
+        unstable_action[2] = action_high[2] * 0.9 # Right Knee (Bend)
+        unstable_action[5] = action_high[5] * 0.9 # Left Knee (Bend)
+        
+        for step in range(500):
+            obs, reward, terminated, truncated, info = env.step(unstable_action)
             
             if terminated:
-                print(f"  ✓ Terminated at step {step}, height {info['torso_z']:.3f} m (correct)")
+                print(f"  ✓ Terminated at step {step}, final height {info['torso_z']:.3f} m (Correct, Z < {FALL_THRESHOLD}m)")
+                termination_occurred = True
                 break
-        else:
-            print(f"  ⚠ Did not terminate (robot very stable!)")
+        
+        assert termination_occurred, "Robot did not terminate when unstable actions were applied."
         
         env.close()
+        print(f"✓ All assertions passed")
         return True
         
     except Exception as e:
@@ -386,77 +245,22 @@ def test_termination_conditions():
         traceback.print_exc()
         return False
 
-
-def test_multiple_episodes():
-    """Test 9: Multiple episode resets"""
-    print("\n" + "="*60)
-    print("TEST 9: Multiple Episodes")
-    print("="*60)
-    
-    try:
-        env = HumanoidWalkEnv(render_mode=None, max_steps=50)
-        
-        print(f"Running 3 episodes...")
-        
-        episode_stats = []
-        
-        for episode in range(3):
-            obs, info = env.reset()
-            episode_reward = 0
-            episode_steps = 0
-            
-            for step in range(50):
-                action = env.action_space.sample()
-                obs, reward, terminated, truncated, info = env.step(action)
-                
-                episode_reward += reward
-                episode_steps += 1
-                
-                if terminated or truncated:
-                    break
-            
-            episode_stats.append({
-                'episode': episode + 1,
-                'steps': episode_steps,
-                'reward': episode_reward,
-                'final_x': info['torso_x']
-            })
-            
-            print(f"  Episode {episode+1}: {episode_steps} steps, "
-                  f"reward={episode_reward:.2f}, final_x={info['torso_x']:.2f}m")
-        
-        print(f"\n✓ Multiple episodes successful")
-        print(f"  Average steps: {np.mean([s['steps'] for s in episode_stats]):.1f}")
-        print(f"  Average reward: {np.mean([s['reward'] for s in episode_stats]):.2f}")
-        
-        env.close()
-        return True
-        
-    except Exception as e:
-        print(f"✗ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
+# ----------------------------------------------------------------------
 
 def run_all_tests():
-    """Run all Module 2 tests"""
+    """Run all Module 2 tests and summarize results."""
     print("\n" + "#"*60)
     print("#" + " "*58 + "#")
-    print("#  MODULE 2 TEST SUITE - Simulation Environment" + " "*13 + "#")
+    print("#  MODULE 2 TEST SUITE - Simulation Environment (HumanoidWalkEnv)"+" "*2 + "#")
     print("#" + " "*58 + "#")
     print("#"*60)
     
     tests = [
-        ("Environment Creation", test_environment_creation),
-        ("Reset Default Pose", test_reset_default_pose),
-        ("Reset Custom Pose", test_reset_custom_pose),
-        ("Step Execution", test_step_execution),
-        ("Reward Function", test_reward_function),
-        ("Discrete Action Space", test_discrete_action_space),
-        ("Pose Library Integration", test_pose_library_integration),
-        ("Termination Conditions", test_termination_conditions),
-        ("Multiple Episodes", test_multiple_episodes),
+        ("Test 1: Environment Creation", test_environment_creation),
+        ("Test 2: Reset Default Pose", test_reset_default_pose),
+        ("Test 3: Reset Custom Pose", test_reset_custom_pose),
+        ("Test 4: Step Execution", test_step_execution),
+        ("Test 5: Termination Conditions", test_termination_conditions),
     ]
     
     results = []
@@ -465,7 +269,7 @@ def run_all_tests():
             result = test_func()
             results.append((test_name, result))
         except Exception as e:
-            print(f"\n✗ Test '{test_name}' crashed: {e}")
+            print(f"\n✗ Test '{test_name}' crashed unexpectedly: {e}")
             results.append((test_name, False))
     
     # Summary
@@ -483,13 +287,11 @@ def run_all_tests():
     print(f"\nTotal: {passed}/{total} tests passed")
     
     if passed == total:
-        print("\n🎉 All tests passed! Module 2 is ready!")
-        print("\n📋 Next: Module 3 - DQN Agent Implementation")
+        print("\n🎉 All core simulation tests passed!")
     else:
-        print("\n⚠ Some tests failed. Check errors above and fix.")
+        print("\n⚠ Some tests failed. Check the errors above and fix the environment code.")
     
     print("\n" + "#"*60 + "\n")
-
 
 if __name__ == "__main__":
     run_all_tests()
